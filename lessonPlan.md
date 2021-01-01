@@ -627,3 +627,392 @@
   })
 
 -
+
+- mongoose
+  const mongoose = require("mongoose")
+  const {onnection, Schema} = mongoose
+  mongoose.connect('mongodb://localhost:27017/test').catch(console.error)
+
+  - const UserSchema = new Schema({
+    firstName: String,
+    lastName: String,
+    likes: [String]
+    })
+
+  - const User = mongoose.model("User", UserSchema)
+
+  - const addUser = (firstNam, lasNam)=>new User({
+    firstNam,
+    lastNam
+    }).save()
+
+        - const getUser = id => User.findById(id)
+
+        - const removeUser = id => User.remove({id})
+
+        - connection.once("connected", async () => {
+
+    try{
+
+  //create
+  const newUser = await addUser("john")
+  //read
+  const user = await getUser(newUser.id)
+  //update
+  user.firstName = "john"
+  user.lastName = "Smith"
+  user.likes = {
+  "cooking",
+  "iceCream"
+  }
+  await user.save()
+  console.log(JSON.stringify(user, null, 4))
+  //delete
+  await removeUser(user.id)
+  }catch(error){
+  console.dir(error.message, {colors: true})
+  }finally{
+  await connection.close()
+  }
+  })
+
+- mongoose query builder
+  const user = await User.findOne({
+  firstNam: "John",
+  age: {$lte: 30}
+  }, (error, document) => {
+  if(error) return console.log(error)
+  console.log(document)
+  })
+
+  const user = User.findOne({
+  firstNam: "John",
+  age: {$lte: 30}
+  })
+  user.exec((error, document) => {
+  if(error) return console.log(error)
+  console.log(document)
+  })
+
+  try{
+  const user = await User.findOne({
+  firstNam: "John",
+  age: {$lte: 30}
+  })
+  console.log(user)
+  }catch(error){
+  console.log(error)
+  }
+
+try{
+const user = await User.findOne().where("firstNam", "John").where("age").lte(30)
+console.log(user)
+}catch(error){
+console.log(error)
+}
+
+- mongoose
+  const mongoose = require("mongoose")
+  const {connection, Schema} = mongoose
+  mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+  const UserSchema = new Schema({
+  firstName: String,
+  lastName: String,
+  age: Number
+  })
+  const User = mongoose.model("User", UserSchema)
+
+  connection.once("connected", async ()=>{
+  try{
+  const user = await new User({
+  firstName: "John",
+  lastName: "Snow",
+  age: 30,
+  }).save()
+  const findUser = await User.findOne().where("firstName").equals("John").where("age").lte(30).select("lastName")
+  console.log(JSON.stringify(findUser, null, 4))
+  await user.remove()
+  }catch(error){
+  console.dir(error.message, {colors: true})
+  }finally{
+  await connectionn.close()
+  }
+  } )
+
+  - defining document instance methods
+    // const instance = new Model()
+    or
+    // Model.findOne([condition]).then((instance)=>{})
+
+    - const mongoose = require("mongoose")
+      const {conection, Schema} = mongoose
+      mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+      const UserSchema = new Schema({
+      firstName: String,
+      lastName: String,
+      age: Number,
+      likes: [String]
+      })
+      UserSchema.method("setFullName", function setFullName(v){
+      const fullName = String(v).split(" ")
+      this.lastName = fullName[0] || "" this.firstName = fullName[1] || ""
+      })
+      UserSchema.method("getFullName", function getFullName(){
+      return `${this.firstName} ${this.lastName}`
+      })
+      UserSchema.method("loves", function loves(stuff){
+      this.likes.push(stuff)
+      })
+      UserSchema.method("dislikes", function dislikes(stuff){
+      this.likes = this.likes.filter(str => str !== stuff)
+      })
+
+      const User = mongoose.model("User", UserSchema)
+
+      - connection.once("connected", async () => {
+        try{
+        const user = new User()
+        user.setFullName("Huang Jinguax")
+        user.loves("Kitties")
+        user.loves("strawberries")
+        user.loves("snakes")
+        await user.save()
+        const person = await User.findOne().where("firstName", "jinc").where("likes").in(["snakes", "kitties"])
+        person.dislikes("snakes")
+        await user.save()
+
+            console.log(person.getFullName())
+            console.log(JSON.stringify(person, null, 4))
+            await user.remove()
+
+        }catch(error){
+        console.dir(error.message, {colors: true})
+        }finally{
+        await connection.close()
+        }
+        })
+
+- definig static model methods
+- find , findOne, findOneAndRemove
+- mongoose
+  const mongoose = require("mongoose")
+  const {connection, Schema} = mongoose
+  mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+  // define Schema
+  const UsrSchm = new Schema({
+  firstName: String,
+  lastName: String,
+  age: Number,
+  likes: [String]
+  })
+  UsrSchm.static("getByFullName", function getByFullName(v){
+  const fullName = String(v).split(" "),
+  firstName = fullName[1] || ""
+  lastName = fullName[0] || ""
+  return this.findOne().where("firstName").equals(firstName)
+  })
+  const User = mongoose.model("User", UsrSchm)
+
+  connection.once("connected", async ()=>{
+  try{
+  //create
+  const user = new User({
+  firstName: "Jingxuan",
+  lastName: "Huang",
+  likes: ["kitties", "strawberries"]
+  })
+  await user.save()
+
+      const peron = await User.getByFullName("Haung Jinx")
+      console.log(JSON.stringify(person, null, 4))
+      await person.remove()
+      await connection.close()
+
+  }catch(error){
+  consle.log(error.message)
+  }
+  })
+
+- writing middleware function mongoose prehooks, posthooks
+- document middleware, model middleware, aggrgate middleware, query middleware
+
+  const UsrSchm = new Schema({
+  firstName: String,
+  lastName: String,
+  fullName: String
+  age: Number,
+  likes: [String]
+  })
+  UsrSchm.pre("save", async function preSave(){
+  this.fullName = `${this.firstName} ${this.lastName}`
+  })
+  UsrSchm.post("save", async function postSave(doc){
+
+  console.log("ew User created:", doc.fullName)
+
+  })
+  const User = mongoose.model("User", UsrSchm)
+
+// async function const user = new User({
+firstName: String,
+lastName: String,
+})
+await user.save()
+
+Document middleware
+Model middleware
+Query middleware
+
+- mongoose
+- in document middleware functions this refer to document, builtin methods, define hooks for them: init , validate, save, remove
+
+const mongoose = require("mongoose")
+const {connection, Schema} = mongoose
+mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+
+const UsrSchm = new Schema({
+firstName: {type: String, required: true},
+lastName: {type: String, required: true},
+
+})
+
+UsrSchm.pre("init", async function preInit(){
+console.log("A document wws going to be initialized")
+})
+UsrSchm.post("init", async function postInit(){
+console.log("A document wws initialized")
+})
+
+UsrSchm.pre("validate", async function preValidate(){
+console.log("A document wws going to be validateed")
+})
+UsrSchm.post("validate", async function postValidate(){
+console.log("A document wws validateed")
+})
+
+UsrSchm.pre("save", async function preSave(){
+console.log("A document wws going to be saved")
+})
+UsrSchm.post("save", async function postSave(){
+console.log("A document wws saved")
+})
+
+UsrSchm.pre("remove", async function preRemove(){
+console.log("A document wws going to be removed")
+})
+UsrSchm.post("remove", async function postRemove(){
+console.log("A document wws removed")
+})
+
+const User = mongoose.model("User", UsrSchm)
+
+connection.once("connected", async ()=>{
+try{
+const user = new User({
+firstName: "John",
+lastName: "smith",
+})
+await user.save()
+await User.findById(user.id)
+await user.remove()
+await connection.close()
+} catch(error){
+await connection.close()
+console.dir(error.message, {colors: true})
+throw new Error("Doc")
+}
+})
+Query middleware this refer query object, supported only in model and query functions
+
+- count, find, findOne, findOneAndRemove, findOneAndUpdate, update
+- query middleware functions
+
+  const mongoose = require("mongoose")
+  const {connection, Schema} = mongoose
+  mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+  const UsrSchema = new Schema({
+  firstName: {type: String, required: true},
+  lastName: {type: String, required: true},
+
+})
+UsrSchema.pre("count", async function preCount(){
+console.log("preparing to count document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.post("count", async function postCount(){
+console.log("counted to ${count} document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.pre("find", async function preFind(){
+console.log("preparing to count document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.post("find", async function postFind(docs){
+console.log("counted to ${docs.count} document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.pre("findOne", async function preFOne(){
+console.log("preparing to count document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.post("findOne", async function postFOne(docs){
+console.log("counted to ${docs.count} document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.pre("update", async function preUpdate(){
+console.log("preparing to count document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+UsrSchema.post("update", async function postUpdate(docs){
+console.log("counted to ${docs.count} document with this criteria: ${JSON.stringify(this.\_conditions)}")
+})
+
+const User = mongoose.model("User", UsrSchema)
+
+connection.once("connected", async ()=>{
+try{
+const user = new User({
+firstName: "John",
+lastName: "Smith"
+})
+await user.save()
+await User.where("frstName").equals("John").update({lastName: "Anderson"})
+await User.findOne().select(["firstName"]).where("firstName").equals("John")
+await User.find().where("firstName").equals("John")
+await User.where("firstName").equals("John").count()
+await user.remove()
+}catch(error){
+console.dir(error, {colors: true})
+}finally{
+await connection.close()
+}
+})
+
+- model middleware functions
+
+  const mongoose = require("mongoose")
+  const {connection, Schema} = mongoose
+  mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+  const UsrSchema = new Schema({
+  firstName: {type: String, required: true},
+  lastName: {type: String, required: true},
+  })
+  UsrSchema.pre("insertMany", async function prMany(){
+  console.log("Preparing docs...")
+  })
+  UsrSchema.post("insertMany", async function psMany(){
+  console.log("Preparing docs...")
+  })
+
+const User = mongoose.model("User", UsrSchema)
+
+- writing custom validators for mongoose schema
+
+- building restful api to manage users with express and mongoose
+- body-parser, connect-mongo, express, express-session, mongoose, node-fetch
+
+- real time communication with socket.io and express
+
+- working with socket.io namespaces
+
+- writing middleware for socket io
+
+- integrating socket io with express
+- using express middleware in socket io
+
+- managing state with redux
+- working with pureComponent
+- react event handlers
