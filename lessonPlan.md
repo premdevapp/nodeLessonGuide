@@ -575,6 +575,55 @@
   const addUsr = await rFetch("/users/Smith", "post")
   const getAll = await rFetch("/users/all", "get")
   //
-
+  log("[GET] users:", users)
+  log("[GET] a user with id=${id}:", getById)
+  log("[PUT] a user with id=${id}:", updateById)
+  log("[POST] users:", addUsr)
+  log("[DELETE] users:", deleteById)
+  log("[GET] users:", getAll)
   }
   test()
+
+- crud operations with mongoose
+- create database by using schemas and built in validation, MongoDB is document-oriented database
+- const PersonSchema = new Schema({
+  firstName: String,
+  lastName: String
+  })
+  const Person = connection.model("Person", PersonSchema)
+  // String, Number, Boolean, Array, Date, Buffer, Mixed, Objectid, Decimal128
+
+  - const {Schema} = require("mongoose")
+    const PersonSchema = new Schema({
+    name: String,
+    age: Number,
+    isSingle: Boolean,
+    birthDay: Date,
+    descriptions: Buffer
+    })
+
+- - const {Schema, SchemaTypes} = require("mongoose")
+    const PersonSchema = new Schema({
+    name: SchemaTypes.String,
+    age: SchemaTypes.Number,
+    isSingle: SchemaTypes.Boolean,
+    birthDay: SchemaTypes.Date,
+    descriptions: SchemaTypes.Buffer
+    })
+
+- - const {Schema} = require("mongoose")
+    const PersonSchema = new Schema({
+    name: {type: String, required: true, default: "Unknown"},
+    age: {type: Number, required: true, min: 18, max: 80},
+    isSingle: {type: Boolean},
+    birthDay: {type: Date, required: true},
+    descriptions: {type: Buffer}
+    })
+
+  const PersonSchema = new Schema({
+  name: String,
+  age: Number,
+  likes: [String.]
+  })
+
+-
