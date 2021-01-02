@@ -998,21 +998,1151 @@ await connection.close()
   })
 
 const User = mongoose.model("User", UsrSchema)
+connection.once("connected", async ()=>{
+try{
+await User.insertMany([{firstName: "Leo", lastName: "Smith"}, {firstName: "Neo", lastName: "Jackson"}])
+}catch(error){
+console.dir(error, {colors: true})
+}finally{
+await connection.close()
+}
+})
 
-- writing custom validators for mongoose schema
+- - # writing custom validators for mongoose schema
+    const mongoose = require("mongoose")
+    const {connection, Schema} = mongoose
+    mongoose.connect("mongodb://localhost:27017/test").catch(console.error)
+
+const UsrSchema = new Schema({
+username: {
+type: String,
+minlength: 6,
+maxlength: 20,
+required: [true, "user is required"],
+validate: {message: `{value} is not valid username`}
+validator: (val)=> /^[a-zA-Z]+$/.test(val)
+}
+
+const User = mongoose.model("User",UsrSchema )
+
+connection.once("connected", async ()=>{
+try{
+const user = new User()
+let errors = null
+errors = user.validateSync()
+console.dir(errors.errors["username"].message)
+}catch(error){
+console.dir(error, {colors: true})
+}finally{await connection.close()}
+})
 
 - building restful api to manage users with express and mongoose
+  ///
+
+- body-parser, connect-mongo, express, express-session, mongoose, node-fetch
+  // 2 middleware functions , one to configure session, other connecting mongodb before mount api routes
+  const mongoose = require("mongoose")
+  const express = require("express")
+  const session = require("express-session")
+  const bodyParser = require("body-parser")  
+   const MongoStore = require("connect-mongo")(session)
+  const api = require("./api/controller")
+  const app = express()
+  const db = mongoose.connect("mongodb://localhost:27017/test").then(conn=>conn).catch(console.error)
+
+      // use body-parser to parse req body as json middlewware
+      app.use(bodyParser.json())
+
+      // define express middlewae ensure web apps connected to mongodb first before allowing next routes handler
+      app.use((req, res, next)=>{
+        Promise.resolve(db).then(
+          (connection, err) => (typeof connection !== "undefined") ? next() : next(new Error("MongoError"))
+        )
+      })
+
+      // configure express-session middleware to store sessions in mongo database
+      app.use(session({
+        secret: "Mern CookBookSecret",
+        resave: false,
+        saveUninitialized: true,
+        store: new MongoStore({
+          collection: "sessions",
+          mongooseConnection: mongoose.connection
+        })
+      }))
+
+      // mount api controller to api routes
+      app.use("/users", api)
+
+      // listen on port
+      app.listen(4000, ()=>console.log("web"))
+
+      //create new directory nammed api, next create bussiness logic, define schema for users with static and instance methods that allow useers to signup, login, logout, get profile data, change thier password, remove profile
+
+      //creat model.js in api directory - npm crypto
+      const {connection, Schema} = require("mongoose")
+      const crypto = require("crypto")
+
+      // define Schema
+      const UserSchema = new Schema({
+        username: {
+          type: String,
+          minlength: 4,
+          maxlength: 20,
+          required: [true, "username field is required"],
+          validate: {
+            validator: function (value){
+              return /^[a-zA-Z]+$/.test(value)
+            },
+            message: '{VALUE} is not valid username'
+          },
+        },
+        password: String
+      })
+
+  // define static model method for login
+  UserSchema.static("login", async function(usr, pwd){
+  const hash = crypto.createHash("sha256").update(String(pwd))
+  const user = await this.findOne().where("username").equals(usr).where("password").equals(hash.digest("hex"))
+  if(!user) throw new Error("Incorrect credentials")
+  delete user.password
+  return user
+  })
+
+// define static model method for signup
+UserSchema.static("signup", async function(usr, pwd){
+if(pwd.length < 6) throw new Error("Pwd must be more than 6 chars")
+const hash = crypto.createHash("sha256").update(pwd)
+const exist = await this.findOne().where("username").equals(usr)
+if(exist) throw new Error("username a;ready exists")
+const user = this.create({
+username: usr,
+pasword: hash.digest("hex"),
+})
+return user
+})
+
+// define document instance method for changePass
+UserSchema.method("changePass", async function(pwd){
+if(pwd.length < 6) throw new Error("PWD have more 6")
+const hash = crypto.createHash("sha256").update(pwd)
+this.password = hash.digest("hex")
+return this.save()
+})
+
+// compile mongoose schema into model and export
+module.exports = connection.model("User", UserSchema)
+
+//finally define controllerthat transform req body to actions that model can understand, export it as express router that contain all API
+//create controller.js in api folder
+// import model js
+const express = require("express")
+const User = require("./model")
+const api = express.Router()
+// define router handler for user login and another for not logged in
+const isLogged = ({session}, res, next) =>{
+if(!session.user) res.status(403).json({
+status: "You are not logged in!!"
+})else next()
+}
+const isNotLogged = ({session}, res, next) =>{
+if(session.user) res.status(403).json({
+status: "You are logged in already"
+}) else next()
+}
+
+// define post req method to handle req to login endpoint
+api.post("/login", isNotLogged, async (req, res)=>{
+try{
+const {session, body} = req
+const {username, password} = body
+const user = await User.login(username, password)
+session.user = {
+\_id: user.\_id,
+username: user.username,
+}
+session.save(() => {
+res.status(200).json({
+status: "Welcome"
+})
+})
+}catch(error){
+res.status(403).json({error: error.message})
+}
+})
+
+// define a post req /logout
+api.post("/logout", isLogged, (req, res)=>{
+req.session.destroy()
+res.status(200).send({status: "Bye bye!!!"})
+})
+
+//post req method to handle singup
+api.post("/signup", async(req, res)=>{
+try{
+const {session, body} = req
+const {username, password} = body
+const user = await User.signup(username, password)
+res.status(201).json({status: "created!"})
+
+}catch(error){
+res.status(403).json({error: error.message})
+}
+})
+
+//define get req method to handle /profile
+api.get("/profile", isLogged, (req, res)=>{
+const {user} = req.session
+res.staus(200).json({user})
+})
+
+// define put req method to handle /changepass
+api.put("/changepass", isLogged, async (req, res)=>{
+try{
+
+const {session, body} = req
+const {password} = body
+const {\_id} = session.user
+
+const user = await User.findOne({\_id})
+if (user){
+user.changePass(password)
+res.status(200).json({status: "Pwd changed"})
+}else{
+res.status(403).json({status: user})
+}
+
+}catch(error){
+res.status(403).json({error: error.message})
+}
+})
+
+// define delete req method to handle /delete
+api.delete("/delete", isLogged, async (req, res)=>{
+try{
+
+const {\_id} = req.session.user
+
+const user = await User.findOne({\_id})
+await user.remove()
+req.session.destroy((err)=>{
+if(err) throw new Error(err)
+res.status(200).json({status: "Deleted"})
+})
+
+}catch(error){
+res.status(403).json({error: error.message})
+}
+})
+
+//export route
+module.exports = api
+
+// test it built nodejs repl and client api
+
+- node-fetch, repl, util, vm
+
+//move to root of project create client-repl.js
+const repl = require("repl")
+const util = require("util")
+const vm = require("vm")
+const fetch = reqiure("node-fetch")
+const {Headers} = fetch
+
+// define var that will later contain session id from cookie once user is logged in, the cookie will be used
+to allow server logged in user
+
+let cookie = null
+
+// define helper function named query to make http req to server, credentials optipon allows to send and recieve cookies from and to server
+define headers to tell server content type of req body be sent as json content
+const query = (path, ops) => {
+return fetch(`http://localhost:1337/users/${path}`, {method: ops.method, body: ops.body, credentials: "include", body: JSON.stringify(ops.body), headers: new Headers({...(ops.headers || {}), cookie, Accept: "application/json", "Content-Type": "application/json",}), }).then(
+async (r) => {
+cookie = r.headers.get("set-cookie") || cookie
+return { data: await r.json(), status: r.status, }
+}
+).catch(error=> error)
+}
+
+// define method to signup
+const signup = (username, password) => query("/signup", {method: "POST", body: {username, password}, })
+
+// define method to login
+const login = (username, password) => query("/login", {method: "POST", body: {username, password}, })
+
+// define method to logout
+const logout = () => query("/logout", {method: "POST", })
+
+// define method to get profile
+const getProfile = () => query("/profile", {method: "GET", })
+
+// define method to change password
+const changePassword = (password) => query("/changepass", {method: "PUT", body: { password}, })
+
+// define method to deleteProfile
+const deleteProfile = () => query("/delete", {method: "DELETE", })
+
+const replServer = repl.start({
+prompt: ">>",
+ignoreUndefined: true,
+async eval(cmd, context, filename, callback){
+const script = new vm.Script(cmd)
+const is_raw = process.stdin.isRaw
+process.stdin.setRawMode(false)
+try{
+const res = await Promise.resolve(
+script.runInContext(context, {
+displayErrors: false,
+breakOnSigint: true,
+})
+)
+callback(null, res)
+}catch(error){
+callback(error)
+}finally{
+process.stdin.setRawMode(is_raw)
+}
+},
+writer(output){
+return util.inspect(output, {breakLength: process.stdout.columns, colors: true, compact: false})
+}
+})
+
+replServer.context.api = {
+signup, login, logout, getProfile, changePassword, deleteProfile,
+}
+
+// execute api.signup("John", "zchvmn")
+api.login("John", "zchvmn")
+api.getProfile()
+api.changePassword("newPWD")
+api.logout()
+api.login("John", "newPWD")
+
+///
+
 - body-parser, connect-mongo, express, express-session, mongoose, node-fetch
 
 - real time communication with socket.io and express
 
-- working with socket.io namespaces
+///
 
-- writing middleware for socket io
+- understand nodejs events
+- understand socket.IO events
+- working with socket.IO namespaces
+- defining and joining to Socket.IO rooms
+- writing middlewares for Socket.IO
+- integrating Socket.IO with expressjs
+- using expressjs middleware in Socket.io
+  // html5 websocket protocol, uses single tcp connection kept ope even client and server not communicating, connections between
+  client and server exists everytime
+- chat application to multi user game
+- nodejs event driven architecture, EventEmitter, tha allows listenres to subscribe to certain named events that triggered later by emitter
+  const EventEmitter = require("events")
+  const emitter = new EventEmitter()
+  emitter.on("welcome", ()=>{
+  console.log("Welcome")
+  })
+  // can trigger by emiter
+  emitter.emit("welcome")
+  // create new project np init
+  // class extends EventEmitter and two instance methods start, stop, when start method called trigger all listners attached to start event
+  keep starting time using process.hrtime, when stop called trigger all listner attached to stop event
+  // create timer.js
+  const EventEmitter = require("events")
+  // define two contants use to convert returned value of process.hrtime from sec to nanosecond to millisecond
+  const NS_PER_SEC = 1e9
+  const NS_PER_MS = 1e6
 
-- integrating socket io with express
-- using express middleware in socket io
+// timer with two instance methods
+class Timer extends EventEmitter {
+start(){
+this.startTime = process.hrtime()
+this.emit("start")
+stop(){
+const diff = process.hrtime(this.startTime)
+this.emit("stop", (diff[0]\*NS_PER_SEC+diff[1]) / NS_PER_MS,)
+}  
+ }
+}
+
+// create instance of timer
+const tasks = new Timer()
+
+// attach event listner to start event
+tasks.on("start", ()=>{
+let res = 1
+for(let i = 1; i < 100000; i++){
+res \*= i
+}
+tasks.stop()
+})
+
+attach eventListne to stop event
+timer.on("stop", (time)=>{
+console.log(`Task completed in ${time} ms`)
+})
+
+tasks.start()
+
+// synchronous
+
+const EventEmitter = require("events")
+const events = new EventEmitter()
+events.on("print", ()=> console.log("1"))
+events.on("print", ()=> console.log("2"))
+events.on("print", ()=> console.log("3"))
+events.emit("print")
+
+//Asynchronous
+
+const EventEmitter = require("events")
+const events = new EventEmitter()
+events.on("print", ()=> console.log("1"))
+events.on("print", async ()=> await Promise.resolve("2"))
+events.on("print", ()=> console.log("3"))
+events.emit("print")
+//
+const EventEmitter = require("events")
+class MyEvents extends EventEmitter{
+start(){
+return this.listeners("logme").reduce( (promise, nextEvt) => promise.then(nextEvt), Promise.resolve(), )
+}
+}
+const event = new MyEvents()
+event.on("logme", ()=> console.log("1"))
+event.on("logme", async ()=> await Promise.resolve("2"))
+event.on("logme", ()=> console.log("3"))
+event.start()
+
+io.on("connection", (socket) => {
+console.log("A new client is connected")
+})
+
+io.of("/").on("connection", (socket) => {
+console.log("A new client is connected")
+})
+
+socket.on("disconnecting", (reason) => {
+console.log("Disconnecting because ", reason)
+})
+
+socket.on("disconnect", (reason) => {
+console.log("Disconnected because ", reason)
+})
+
+socket.on("error", (error) => {
+console.log("Oh! no ", error.message)
+})
+
+// client
+clientSocket.on("connect", ()=>{
+console.log("Successfully connected")
+})
+clientSocket.on("connect_error", (error)=>{
+console.log("connection error", error)
+})
+clientSocket.on("connect_timeout", (timeout)=>{
+console.log("connect attempt timed out after", timeout)
+})
+clientSocket.on("disconnect", (reason)=>{
+console.log("disconnected because", reason)
+})
+clientSocket.on("reconnect", (n)=>{
+console.log("Reconnected after", n, 'attempt(s')
+})
+clientSocket.on("reconnect_attempt", (n)=>{
+console.log("Trying to reconnect again", n, 'attempt(s'))
+})
+clientSocket.on("reconnect_error", (error)=>{
+console.log("Oh no could'nt reconnect", error)
+})
+clientSocket.on("reconnect_failed", (n)=>{
+console.log("could'nt reconnected after", n, 'attempt(s'))
+})
+clientSocket.on("ping", ()=>{
+console.log("checking if server is alive")
+})
+clientSocket.on("pong", (latency)=>{
+console.log("server responded after", latency, 'm(s'))
+})
+clientSocket.on("error", (error)=>{
+console.log("Oh no", error.message)
+})
+
+- socket.io
+  // create new file simple-io-server.js
+  const io = require("socket.io")()
+
+//define url path
+io.path("/socket.io")
+const root = io.of("/")
+root.on("connection", socket => {
+let counter = 0
+socket.on("time", ()=>{
+const currentTime = new Date().toTimeString()
+counter +=1
+socket.emit("got time?", currentTime, counter)
+})
+})
+io.listen(1337)
+
+// simple-io-client.js
+const io = require("socket.io-client")
+const clientSocket = io("http://localhost:1337", {path: "/socket.io"})
+clientSocket.on("connect", ()=>{
+for(let i = 1; i <= 5; i++) clientSocket.emit("time")
+})
+clientSocket.on("got time?", (time, counter)=> {
+console.log(counter, time)
+})
+
+const http = require("http")
+const fs = require("fs")
+const path = require("path")
+const io = require("socket.io")
+
+const app = http.createServer((req, res)=>{
+if(req.url === "/"){
+fs.readFile(path.resolve(\_\_dirname, "nsp-client.html"), (err, data)=>{
+if(err){
+res.writeHead(500)
+return void res.end()
+}
+res.writeHead(200)
+res.end(data)
+})
+
+}else{
+res.writeHead(403)
+res.end()
+}
+})
+
+io.path("/socket.io")
+io.of("/en").on("connection", (socket) => {
+socket.on("getData", ()=>{
+socket.emit("data", {
+title: "English Page",
+msg: "Welcome to my website"
+})
+})
+})
+
+io.of("/es").on("connection", (socket) => {
+socket.on("getData", ()=>{
+socket.emit("data", {
+title: "Pa`gina en Espanol",
+msg: "Bienvenido a mi sitio Web"
+})
+})
+})
+
+io.attach(app.listen(1337, ()=>{
+console.log("serve")
+}))
+// create nsp-client.html
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Socket IO Client</title>
+  <head>
+  <body>
+    <!-- code here -->
+    <h1 id="title"></h1>
+    <section id="msg"></section>
+    <button id="toggleLang">Get Content in spanish</button>
+    <script>socket.io.js</script>
+    <script>babel.js</script>
+    <script>
+      const title = document.getElementById("title")
+      const msg = document.getElementById("msg")
+      const btn = document.getElementById("toggleLang")
+const manager = new io.Manager("http://localhost:1337", {path: "/socket.io"})
+const socket = manager.socket("/en") //"/es"
+socket.on("connect", ()=>{
+  socket.emit("getData")
+})
+socket.on("data", data => {
+  title.textConnect = data.title
+  msg.textConnect = data.msg
+})
+
+btn.addEventListner("click", event=>{
+socket.nsp = socket.nsp === "/en" ? "/es": "/en"
+btn.textContent = socket.nsp === "/en" ? "Get Content in spanish":"Get Content in english"
+socket.close()
+socket.open()
+})
+
+    </script>
+
+  </body>
+</html>
+
+- express, socket.io
+
+///
 
 - managing state with redux
-- working with pureComponent
-- react event handlers
+  const a = 5;
+  const b = 10;
+  const c = [a, b].reduce((accumlator, value)=>{
+  return accumlator+value
+  }, 0)
+
+  const action = {
+  type: "INCREMENT_COUNTER",
+  }
+  // action creators
+  const increment = (incrementBy) => ({
+  type: "INCREMENT_COUNTER",
+  incrementBy
+  })
+  const decrement = (decrementBy) => ({
+  type: "DECREMENT_COUNTER",
+  decrementBy
+  })
+
+  const reduced = [
+  increment(10), decrement(5), increment(3)
+  ].reduce((accu, action)=>{
+  switch (action.type){
+  case INCREMENT_COUNTER:
+  return accumulator + action.incrementBy
+  case DECREMENT_COUNTER:
+  return accumulator - action.decrementBy
+  default:
+  return accu
+  }
+  })
+  console.log(reduced)
+
+  - devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+
+- lifecycleTimes components, constructor(props) -initialize intial state
+- static getDerivedStateFromProps(nextProps, nextState) - merge propos with state
+- componentDidMount, sertInterval
+- shouldComponentUpdate(nextProps, nextState)
+- componentDidUpdate(prevProps, preState, snapshot)
+- getSnapshotBeforeUpdate(prevProps, preState)
+- componentWillUnmount()
+
+-
+- index.html
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <title>Life Cycle Methods</title>
+    </head>
+    <body>
+      <div role="main"></main>
+      <script src="./stateful-react.js"></script>
+    </body>
+  </html>
+  import * as React from "react"
+  import * as ReactDOM from "react-dom"
+
+  class LifeCycleTime extends React.Component{
+  constructor(props){
+  super(props)
+  this.state = {
+  time: new Date().toTimeString(),
+  color: null,
+  dontUpdate: false,
+  }
+  }
+
+  static getDerivedStateFromProps(nextProps, prevState){
+  return nextProps
+  }
+
+  componentDidMount(){
+  this.intervalId = setInterval(()=>{
+  this.setState({
+  time: new Date().toTimeString()
+  })
+  }, 100)
+  }
+
+  componentWillUnmount(){
+  clearInterval(this.intervalId)
+  }
+
+  shouldComponentUpdate(nextProps, nextState){
+  if (nextState.dontUpdate){
+  return false
+  }
+  return true
+  }
+
+  getSnapshotBeforeUpdate(prevProps, prevState){
+  return "snapshot befre update"
+  }
+
+  componentDidUpdate(prevProps, prevState, snapshot){
+  console.log("Component did update and recieved snapshot", snapshot)
+  }
+
+  render(){
+  return (
+  <span style={{color: this.state.color}}>
+  {this.state.time}
+  </span>
+  )
+  }
+
+}
+
+- class App extends React.Component{
+  constructor(props){
+  super(props)
+  this.state = {
+  color: "red",
+  dontUpdate: false,
+  unmount: false
+  }
+  this.toggleColor = this.toggleColor.bind(this)
+  this.toggleUpdate = this.toggleUpdate.bind(this)
+  this.toggleUnmount = this.toggleUnmount.bind(this)
+  }
+  toggleColor(){
+  this.setState((prevState)=>({
+  color: prevState.color === "red"? "Blue" : "red"
+  }))
+
+  }
+  toggleUpdate(){
+  this.setState((prevState)=>({
+  dontUpdate: ! prevState.dontUpdate
+
+  }))
+  }
+  toggleUnmount(){
+  this.setState((prevState)=>({
+  unmount: ! prevState.unmount
+  }
+
+  render(){
+  const {
+  color,
+  dontUpdate,
+  unmount,
+  } = this.state
+  return (
+  <React.Fragment>
+  {unmount === false && <LifeCycleTime color={color} dontUpdate={dontUpdate} /> }
+  <button> Toggle color {JSON.stringify({color})} </button>
+  <button> Should update? {JSON.stringify({dontUpdate})} </button>
+  <button> Should unmount? {JSON.stringify({unmount})} </button>
+  </React.Fragment>
+  )
+  }
+
+  }
+
+// render
+ReactDom.render(
+<App />,
+document.querySelector('[role="main"]')
+)
+
+- React.PureComponent
+- shouildComponentUpdate in React.Coonent, lifecycle internally make shallow compearison of state and props
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <title>React PureComponent</title>
+    </head>
+    <body>
+      <div role="main"></main>
+      <script src="./pureComponent-react.js"></script>
+    </body>
+  </html>
+
+  import _ as React from "react"
+  import _ as ReactDOM from "react-dom"
+  class Button extends React.PureComponent{
+  componentDidUpdate(){
+  console.log("button component did update")
+  }
+  render(){
+  return <button>{this.props.children}</button>
+  }
+  }
+  class Text extends React.Component{
+  componentDidUpdate(){
+  console.log("text component did update")
+  }
+  render(){
+  return this.props.children
+  }
+  }
+  class App extends React.Component{
+  state={
+  counter = 0,
+  }
+  componentDidMount(){
+  this.intervalId = setInterval(()=>{
+  this.setState(({counter}) => ({
+  counter: counter+1,
+  }))
+  }, 1000)
+  }
+  componentWillUnmount(){
+  clearInterval(this.intervalId)
+  }
+  render(){
+  const {counter} = this.state
+  return (
+  <React.Fragment>
+  <h1>Counter : {counter}</h1>
+  <Text>I'm Just a Text</Text>
+  <Button>I'am button</Button>
+  </React.Fragment>
+  )
+  }
+
+  }
+
+  ReactDom.render(
+  <App />,
+  document.querySelector('[role="main"]')
+  )
+
+  - React Event handlers
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <title>React Event Handlers</title>
+    </head>
+    <body>
+      <div role="main"></main>
+      <script src="./event-react.js"></script>
+    </body>
+  </html>
+
+  import _ as React from "react"
+  import _ as ReactDOM from "react-dom"
+
+  class App extends React.Component{
+  constructor(props){
+  super(props)
+  this.state = {
+  title: "Untitled"
+  }
+  this.onBtnClick = this.onBtnClick.bind(this)
+  }
+
+  onBtnClick(){
+  this.setState(
+  {
+  title: "Hello there"
+  }
+  )
+  }
+
+  render(){
+  return (
+  <section>
+  <h1>{this.state.title}</h1>
+  <button onClick={this.onBtnClick}>
+  Click me to change title
+  </button>
+  </section>
+  )
+  }
+
+  }
+  ReactDOM.render(
+  <App />,
+  document.querySelector('[role="main"]')
+  )
+
+  // conditional rendering of components
+
+  const Meal = ({timeOfDay}) => (
+  <span> {timeOfDay === "noon" ? "Pizza" : "Sandwich"} </span>
+  )
+
+  const Meal = ({timeOfDay}) => (
+  <span children={timeOfDay === "noon" ? "Pizza" : "Sandwich"} />
+  )
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <title>Conditional rendering</title>
+    </head>
+    <body>
+      <div role="main"></main>
+      <script src="./condition-react.js"></script>
+    </body>
+  </html>
+
+  import _ as React from "react"
+  import _ as ReactDOM from "react-dom"
+
+  const Toggle = ({condition, children}) => (
+  ccondition ? children[0] : children[1]
+  )
+
+  class App extends React.Component{
+  constructor(props){
+  super(props)
+  this.state = {
+  color: "blue",
+  }
+  this.onClick = this.onClick.bind(this)
+  }
+  onClick(){
+  this.setState(({color}) => ({
+  color: (color === "blue") ? "lime" : "blue"
+  }))
+  }
+
+  render(){
+  const {color} = this.state
+  return (
+  <React.Fragment>
+  <Toggle condition={color==="blue"}>
+  <p style={{color}}>Blue!</p>
+  <p style={{color}}>Lime!</p>
+  </Toggle>
+  <button onClick={this.onClick}>
+  Toggle Colors
+  </button>
+  </React.Fragment>
+  )
+  }
+
+  }
+
+  ReactDOM.render(
+  <App />,
+  document.querySelector('[role="main"]')
+  )
+
+  - <ul>
+      {[
+        <li key={0}>One</li>,
+        <li key={1}>Two</li>,
+      ]}
+    </ul>
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+  <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>Rendering Lists</title>
+      </head>
+      <body>
+        <div role="main"></main>
+        <script src="./Lists-react.js"></script>
+      </body>
+    </html>
+
+  import _ as React from "react"
+  import _ as ReactDOM from "react-dom"
+
+  const MapArray = ({
+  from,
+  mapToProps,
+  children: Child,
+  }) => (
+  <React.Fragment>
+  {from.map((item)=>(<Child {...mapToProps(item)} />))}
+  </React.Fragment>
+  )
+
+  const TodoItem = ({done, label}) => (
+    <li>
+      <input type="checkbox" checked={done} readOnly />
+      <label>{label}</label>
+    </li>
+  )
+
+  const list = [
+  {id: 1, done: true, title: "Study for Chinese Exam"},
+  {id: 2, done: false, title: "Take a Shower"},
+  {id: 3, done: true, title: "Finish the work"},
+  ]
+
+  const mapToProps = ({id: key, done, title: label}) => ({
+  key,
+  done,
+  label
+  })
+
+  const TodoListApp = ({items}) => (
+    <ol>
+      <MapArray from={list} mapToProps={mapToProps}>
+      {TodoItem}
+      </MapArray>
+    </ol>
+  )
+
+  ReactDom.render(<TodoListApp items={list}/>, document.querySelector('[role="main"]'))
+
+- working with forms and inputs in react
+
+- start: "parcel serve -p 1337 index.html"
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+    <!DOCTYPE html>
+
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <title>Forms and inputs</title>
+        </head>
+        <body>
+          <div role="main"></main>
+          <script src="./forms-react.js"></script>
+        </body>
+      </html>
+
+  import _\*_ as React from "react"
+  import _\*_ as ReactDOM from "react-dom"
+
+  class LoginForm extends React.Component{
+
+      constructor(props){
+
+  super(props)
+  this.state = {
+  username: "",
+  password: "",
+  }
+  this.onChange = this.onChange.bind(this)
+  }
+  onChange(event){
+  const {name, value} = event.target
+  this.setState({
+  [name] : name === "username" ? value.replace(/d/gi, "") : value
+  })
+  }
+  render(){
+  return (
+  <form>
+  <input type="text" name="username" placeholder="UserName" value={this.state.username} onChange={this.onChange} />
+  <input type="password" name="password" placeholder="Password" value={this.state.password} onChange={this.onChange} />
+  <pre>{JSON.stringify(this.state, null, 2)}</pre>
+  </form>
+  )
+  }
+  }
+  ReactDOM.render(<LoginForm />, document.querySelector('[role="main"]'))
+
+// understanding refs and to use them
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+    <!DOCTYPE html>
+
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <title>Refs</title>
+        </head>
+        <body>
+          <div role="main"></main>
+          <script src="./refs-react.js"></script>
+        </body>
+      </html>
+
+  import _\*_ as React from "react"
+  import _\*_ as ReactDOM from "react-dom"
+
+  class LoginForm extends React.Component{
+  refForm = React.createRef()
+  constructor(props){
+  super(props)
+  this.state = {}
+  this.onSubmit = this.onSubmit.bind(this)
+  this.onClick = this.onClick.bind(this)
+  }
+  onSubmit(event){
+  event.preventDefault()
+  const form = this.refForm.current
+  const data = new FormData(form)
+  this.setState({
+  user: data.get("user"),
+  pass: data.get("pass")
+  })
+  }
+  onClick(event){
+  const form = this.refForm.current
+  form.dispatchEvent(new Event("submit"))
+  }
+  render(){
+  const {onSubmit, onClick, refForm, state} = this
+  return (
+  <React.Fragment>
+  <form onSubmit={onSubmit} ref={refForm}>
+  <input type="text" name="user"/>
+  <input type="text" name="pass" />
+  </form>
+  <button onClick={onClick}>LogIn</button>
+  <pre>{JSON.stringify(state, null, 2)}</pre>
+  </React.Fragment>
+  )
+  }
+
+  }
+  ReactDOM.render(<LoginForm />, document.querySelector('[role="main"]'))
+
+- understanding react portals
