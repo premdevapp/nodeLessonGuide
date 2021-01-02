@@ -2146,3 +2146,201 @@ document.querySelector('[role="main"]')
   ReactDOM.render(<LoginForm />, document.querySelector('[role="main"]'))
 
 - understanding react portals
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+    <!DOCTYPE html>
+
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <title>Portals</title>
+        </head>
+        <body>
+          <div role="main"></main>
+          <script src="./portals-react.js"></script>
+        </body>
+      </html>
+
+  import _\*_ as React from "react"
+  import _\*_ as ReactDOM from "react-dom"
+
+  const Header = () => ReactDOM.createPortal(
+    <h1>React Portal </h1>,
+    document.querySelector('[id="heading"]')
+  )
+
+  const App = () => (
+  <React.Fragment>
+    <p>Hello World!</p>
+    <Header />
+    </React.Fragment>
+  )
+
+  ReactDom.render(<App />, document.querySelector('[role="main"]'))
+
+  - catching errors with errorBoundry
+
+- implements component did catch to catch errors in children, they catch errors in constructor, errors cannot be caugt are asynchronous code, event handlers and errors, error and objectc stacked
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+    <!DOCTYPE html>
+
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <title>catching errors</title>
+        </head>
+        <body>
+          <div role="main"></main>
+          <script src="./error-boundry-react.js"></script>
+        </body>
+      </html>
+
+      // create error-boundry.js
+
+  import _\*_ as React from "react"
+  import _\*_ as ReactDOM from "react-dom"
+
+  class ErrorBoundry extends React.Component{
+  constructor(props){
+  super(props)
+  this.state = {
+  hasError: false,
+  message: null,
+  where: null
+  }
+  }
+  coponentDidCatch(error, info){
+  this.setState({
+  hasError: true,
+  message: error.message,
+  where: info.componentStack
+  })
+  }
+  render(){
+  const {hasError, message, where} = this.state
+  return (hasError ? <details style={{whiteSpace: "pre-wrap"}}>
+  <summary>{message}</summary>
+  <p>{where}</p>
+  </details> : this.props.children)
+  }
+  }
+
+  class App extends React.Component{
+  constructor(props){
+  super(props)
+  this.onClick = this.onClick.bind(this)
+  }
+  onClick(){
+  this.setState(()=>{
+  throw new Error("Error while sending state")
+  })
+  }
+  render(){
+  return(<button onClick={this.onClick}>Buggy Button </button>)
+  }
+  }
+
+ReactDom.render(<ErrorBoundry><App /><ErrorBoundry>, document.querySelector('[role="main"]'))
+
+- checking properties with PropTypes
+- static propTypes prooperties
+  class MyComponent extends React.Component{
+  static propTypes = {
+  children: propTypes.string.isRequired
+  }
+  render(){
+  return <span>{this.props.children}</span>
+  }
+  }
+
+- devdependcies: babel-plugin-transform-class-properties, babel-preset-env, babel-preset-react, babel-core, parcel-bundler, react, react-dom
+- .babelrc
+  {
+  "presets" : ["env", "react"],
+  "plugins": ["transform-class-properties"]
+  }
+- index.html
+    <!DOCTYPE html>
+
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <title>Type Checking</title>
+        </head>
+        <body>
+          <div role="main"></main>
+          <script src="./type-checking-react.js"></script>
+        </body>
+      </html>
+
+      // create error-boundry.js
+
+  import _\*_ as React from "react"
+  import _\*_ as ReactDOM from "react-dom"
+  import _\*_ as propTypes from "prop-types"
+
+  class Toggle extends React.Component{
+  static propTypes = {
+  condition: propTypes.any.isRequired,
+  children: (props, propName, componentName) => {
+  const customPropTypes = {
+  children: propTypes.arrayOf(propTypes.element).isRequired
+  }
+  const isArrayOfElements = propTypes.checkPropTypes(customPropTypes, props, propName, componentName)
+  const children = props[propName]
+  const count = React.Children.count(children)
+  if(isArrayOfElements instanceof Error) return isArrayOfElements
+  else if(count !== 2){
+  return new Error(` ${componentName} expected ${propName} to contain exactly 2 react elements `)
+  }
+  }
+  render(){
+  const {condition, children } = this.props
+  return condition? children[0]: children[1]
+  }
+  }
+
+  }
+
+  class App extends React.Component{
+  constructor(props){
+  super(props)
+  this.state = {
+  value: false
+  }
+  this.onClick = this.onClick.bind(this)
+  }
+  onClick(){
+  this.setState(({value})=> ({
+  value: !value
+  }))
+  }
+  render(){
+  const value = this.state
+  return(
+  <React.Fragment>
+  <Toggle condition={value}>
+  <p style={{color: "blue"}}>BLUE</p>
+  <p style={{color: "lime"}}>LIME</p>
+  <p style={{color: "pink"}}>PINK</p>
+  <Toggle>
+  <button onClick = {this.onClick}>
+  Toggle Colors
+  <button>
+  </React.Fragment>
+  )
+  }
+  }
